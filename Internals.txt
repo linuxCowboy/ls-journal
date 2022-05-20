@@ -1,0 +1,52 @@
+ls.c
+
+global_vars
+
+pretty_printer
+
+print_name_with_quoting
+        *count_number_and_size__curr_dir*  // in global vars
+
+print_current_files
+        one_per_line
+                print_file_name_and_frills
+                        print_name_with_quoting
+
+        many_per_line
+                print_with_separator
+                        print_file_name_and_frills
+                                print_name_with_quoting
+                print_many_per_line
+                        print_file_name_and_frills
+                                print_name_with_quoting
+
+        horizontal
+                print_with_separator
+                        print_file_name_and_frills
+                                print_name_with_quoting
+                print_horizontal
+                        print_file_name_and_frills
+                                print_name_with_quoting
+
+        with_commas
+                print_with_separator
+                        print_file_name_and_frills
+                                print_name_with_quoting
+
+        long_format
+                print_long_format
+                        print_name_with_quoting
+
+        *print_journal*  // current dir
+                pretty
+
+        *count_number_and_size__total*  // in global vars
+
+main
+        pending_dirs loop
+                print_dir
+                        print_current_files
+
+        *print_journal*  // total (recursive mode)
+                pretty
+
