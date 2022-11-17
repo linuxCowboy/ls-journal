@@ -1,10 +1,22 @@
-@@ -305,18 +305,20 @@ static bool print_type_indicator (bool s
-                                   enum filetype type);
- static void print_with_separator (char sep);
- static void queue_directory (char const *name, char const *realname,
-                              bool command_line_arg);
- static void sort_files (void);
- static void parse_ls_color (void);
+@@ -37,6 +37,7 @@
+ 
+ #include <config.h>
+ #include <sys/types.h>
++#include <sys/xattr.h>
+ 
+ #include <termios.h>
+ #if HAVE_STROPTS_H
+@@ -224,6 +225,9 @@
+     /* security context.  */
+     char *scontext;
+ 
++    /* user extended attributes */
++    bool xattr_user;
++
+     bool stat_ok;
+ 
+     /* For symbolic link and color printing, true if linked-to file
+@@ -311,6 +315,8 @@
  
  static void getenv_quoting_style (void);
  
@@ -13,19 +25,7 @@
  /* Initial size of hash table.
     Most hierarchies are likely to be shallower than this.  */
  #define INITIAL_TABLE_SIZE 30
- 
- /* The set of 'active' directories, from the current command-line argument
-    to the level in the hierarchy at which files are being listed.
-    A directory is represented by its device and inode numbers (struct dev_ino).
-    A directory is added to this set when ls begins listing it or its
-    entries, and it is removed from the set just after ls has finished
-@@ -501,18 +503,22 @@ static bool print_owner = true;
- 
- /* True means to display author information.  */
- 
- static bool print_author;
- 
- /* True means to display group information.  -G and -o turn this off.  */
+@@ -507,6 +513,10 @@
  
  static bool print_group = true;
  
@@ -36,19 +36,7 @@
  /* True means print the user and group id's as numbers rather
     than as names.  -n  */
  
- static bool numeric_ids;
- 
- /* True means mention the size in blocks of each file.  -s  */
- 
- static bool print_block_size;
- 
-@@ -865,18 +871,20 @@ static struct option const long_options[
-   {"ignore-backups", no_argument, NULL, 'B'},
-   {"classify", no_argument, NULL, 'F'},
-   {"file-type", no_argument, NULL, FILE_TYPE_INDICATOR_OPTION},
-   {"si", no_argument, NULL, SI_OPTION},
-   {"dereference-command-line", no_argument, NULL, 'H'},
-   {"dereference-command-line-symlink-to-dir", no_argument, NULL,
+@@ -871,6 +881,8 @@
     DEREFERENCE_COMMAND_LINE_SYMLINK_TO_DIR_OPTION},
    {"hide", required_argument, NULL, HIDE_OPTION},
    {"ignore", required_argument, NULL, 'I'},
@@ -57,19 +45,7 @@
    {"indicator-style", required_argument, NULL, INDICATOR_STYLE_OPTION},
    {"dereference", no_argument, NULL, 'L'},
    {"literal", no_argument, NULL, 'N'},
-   {"quote-name", no_argument, NULL, 'Q'},
-   {"quoting-style", required_argument, NULL, QUOTING_STYLE_OPTION},
-   {"recursive", no_argument, NULL, 'R'},
-   {"format", required_argument, NULL, FORMAT_OPTION},
-   {"show-control-chars", no_argument, NULL, SHOW_CONTROL_CHARS_OPTION},
-   {"sort", required_argument, NULL, SORT_OPTION},
-@@ -1615,18 +1623,51 @@ signal_init (void)
-   signal_setup (true);
- }
- 
- static inline void
- signal_restore (void)
- {
+@@ -1621,6 +1633,39 @@
    signal_setup (false);
  }
  
@@ -109,19 +85,7 @@
  int
  main (int argc, char **argv)
  {
-   int i;
-   struct pending *thispend;
-   int n_files;
- 
-   initialize_main (&argc, &argv);
-   set_program_name (argv[0]);
-@@ -1685,19 +1726,20 @@ main (int argc, char **argv)
- 
-       obstack_init (&dev_ino_obstack);
-     }
- 
-   localtz = tzalloc (getenv ("TZ"));
- 
+@@ -1691,7 +1736,8 @@
    format_needs_stat = sort_type == sort_time || sort_type == sort_size
      || format == long_format
      || print_scontext
@@ -131,19 +95,7 @@
    format_needs_type = (! format_needs_stat
                         && (recursive
                             || print_with_color
-                            || indicator_style != none
-                            || directories_first));
- 
-   if (dired)
-     {
-       obstack_init (&dired_obstack);
-@@ -1780,18 +1822,27 @@ main (int argc, char **argv)
-         }
- 
-       print_dir (thispend->name, thispend->realname,
-                  thispend->command_line_arg);
- 
-       free_pending_ent (thispend);
+@@ -1786,6 +1832,15 @@
        print_dir_name = true;
      }
  
@@ -159,19 +111,7 @@
    if (print_with_color && used_color)
      {
        int j;
- 
-       /* Skip the restore when it would be a no-op, i.e.,
-          when left is "\033[" and right is "m".  */
-       if (!(color_indicator[C_LEFT].len == 2
-             && memcmp (color_indicator[C_LEFT].string, "\033[", 2) == 0
-             && color_indicator[C_RIGHT].len == 1
-@@ -1956,19 +2007,19 @@ decode_switches (int argc, char **argv)
-                    " %s"),
-                  quote (p));
-       }
-   }
- 
-   while (true)
+@@ -1962,7 +2017,7 @@
      {
        int oi = -1;
        int c = getopt_long (argc, argv,
@@ -180,19 +120,7 @@
                             long_options, &oi);
        if (c == -1)
          break;
- 
-       switch (c)
-         {
-         case 'a':
-           ignore_mode = IGNORE_MINIMAL;
-           break;
-@@ -2011,18 +2062,23 @@ decode_switches (int argc, char **argv)
-           file_human_output_opts = human_output_opts =
-             human_autoscale | human_SI | human_base_1024;
-           file_output_block_size = output_block_size = 1;
-           break;
- 
-         case 'i':
+@@ -2017,6 +2072,11 @@
            print_inode = true;
            break;
  
@@ -204,19 +132,7 @@
          case 'k':
            kibibytes_specified = true;
            break;
- 
-         case 'l':
-           format = long_format;
-           break;
- 
-         case 'm':
-@@ -2110,18 +2166,22 @@ decode_switches (int argc, char **argv)
- 
-         case DEREFERENCE_COMMAND_LINE_SYMLINK_TO_DIR_OPTION:
-           dereference = DEREF_COMMAND_LINE_SYMLINK_TO_DIR;
-           break;
- 
-         case 'I':
+@@ -2116,6 +2176,10 @@
            add_ignore_pattern (optarg);
            break;
  
@@ -227,19 +143,7 @@
          case 'L':
            dereference = DEREF_ALWAYS;
            break;
- 
-         case 'N':
-           set_quoting_style (NULL, literal_quoting_style);
-           break;
- 
-         case 'Q':
-@@ -3052,19 +3112,20 @@ print_dir (char const *name, char const
-   /* Sort the directory contents.  */
-   sort_files ();
- 
-   /* If any member files are subdirectories, perhaps they should have their
-      contents listed rather than being mentioned here as files.  */
- 
+@@ -3058,7 +3122,8 @@
    if (recursive)
      extract_dirs_from_files (name, false);
  
@@ -249,19 +153,54 @@
      {
        const char *p;
        char buf[LONGEST_HUMAN_READABLE + 1];
- 
-       DIRED_INDENT ();
-       p = _("total");
-       DIRED_FPUTS (p, stdout, strlen (p));
-       DIRED_PUTCHAR (' ');
-       p = human_readable (total_blocks, buf, human_output_opts,
-@@ -4028,18 +4089,22 @@ sort_files (void)
-                         [directories_first]);
+@@ -3295,6 +3360,8 @@
+   return *name != *test || strlen (name) != len;
  }
  
- /* List all the files now in the table.  */
++static char xattr_buf[65536];  // VFS imposed max size
++
+ /* Add a file to the current table of files.
+    Verify that the file exists, and print an error message if it does not.
+    Return the number of blocks that the file occupies.  */
+@@ -3483,12 +3550,36 @@
+               have_acl = (0 < n);
+             }
  
- static void
++          attr_len = listxattr(full_name, NULL, 0);
++          if (attr_len > 0)
++            {
++              attr_len = listxattr(full_name, xattr_buf, 65536);
++
++              if (attr_len > 0)
++                {
++                  char *pBuf = xattr_buf;
++
++                  while (attr_len > 0)
++                    {
++                      if (! strncmp(pBuf, "user.", 5))
++                        {
++                          f->xattr_user = true;
++                          break;
++                        }
++
++                      int l = strlen(pBuf) + 1;
++                      pBuf += l;
++                      attr_len -= l;
++                    }
++                }
++            }
++
+           f->acl_type = (!have_scontext && !have_acl
+                          ? ACL_T_NONE
+                          : (have_scontext && !have_acl
+                             ? ACL_T_LSM_CONTEXT_ONLY
+                             : ACL_T_YES));
+-          any_has_acl |= f->acl_type != ACL_T_NONE;
++          any_has_acl |= f->acl_type != ACL_T_NONE || f->xattr_user;
+ 
+           if (err)
+             error (0, errno, "%s", quotef (full_name));
+@@ -4034,6 +4125,10 @@
  print_current_files (void)
  {
    size_t i;
@@ -272,19 +211,7 @@
  
    switch (format)
      {
-     case one_per_line:
-       for (i = 0; i < cwd_n_used; i++)
-         {
-           print_file_name_and_frills (sorted_file[i], 0);
-           putchar ('\n');
-         }
-@@ -4066,18 +4131,38 @@ print_current_files (void)
-     case long_format:
-       for (i = 0; i < cwd_n_used; i++)
-         {
-           set_normal_color ();
-           print_long_format (sorted_file[i]);
-           DIRED_PUTCHAR ('\n');
+@@ -4072,6 +4167,26 @@
          }
        break;
      }
@@ -311,19 +238,17 @@
  }
  
  /* Replace the first %b with precomputed aligned month names.
-    Note on glibc-2.7 at least, this speeds up the whole 'ls -lU'
-    process by around 17%, compared to letting strftime() handle the %b.  */
+@@ -4254,6 +4369,9 @@
+   else if (f->acl_type == ACL_T_YES)
+     modebuf[10] = '+';
  
- static size_t
- align_nstrftime (char *buf, size_t size, bool recent, struct tm const *tm,
-                  timezone_t tz, int ns)
-@@ -4772,18 +4857,43 @@ print_name_with_quoting (const struct fi
-          because we only output the clear to EOL sequence if the name
-          _might_ wrap to the next line.  This may output a sequence
-          unnecessarily in multi-byte locales for example,
-          but in that case it's inconsequential to the output.  */
-       if (line_length
-           && (start_col / line_length != (start_col + len - 1) / line_length))
++  if (f->xattr_user)
++    modebuf[10] = '!';
++
+   switch (time_type)
+     {
+     case time_ctime:
+@@ -4778,6 +4896,31 @@
          put_indicator (&color_indicator[C_CLR_TO_EOL]);
      }
  
@@ -355,19 +280,7 @@
    return len;
  }
  
- static void
- prep_non_filename_text (void)
- {
-   if (color_indicator[C_END].string != NULL)
-     put_indicator (&color_indicator[C_END]);
-   else
-@@ -5415,18 +5525,23 @@ Sort entries alphabetically if none of -
-       --indicator-style=WORD  append indicator with style WORD to entry names:\
- \n\
-                                none (default), slash (-p),\n\
-                                file-type (--file-type), classify (-F)\n\
-   -i, --inode                print the index number of each file\n\
-   -I, --ignore=PATTERN       do not list implied entries matching shell PATTERN\
+@@ -5421,6 +5564,11 @@
  \n\
  "), stdout);
        fputs (_("\
@@ -379,9 +292,3 @@
    -k, --kibibytes            default to 1024-byte blocks for disk usage;\n\
                                 used only with -s and per directory totals\n\
  "), stdout);
-       fputs (_("\
-   -l                         use a long listing format\n\
-   -L, --dereference          when showing file information for a symbolic\n\
-                                link, show information for the file the link\n\
-                                references rather than for the link itself\n\
-   -m                         fill width with a comma separated list of entries\

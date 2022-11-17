@@ -37,6 +37,7 @@
 
 #include <config.h>
 #include <sys/types.h>
+#include <sys/xattr.h>
 
 #include <termios.h>
 #if HAVE_STROPTS_H
@@ -223,6 +224,9 @@ struct fileinfo
 
     /* security context.  */
     char *scontext;
+
+    /* user extended attributes */
+    bool xattr_user;
 
     bool stat_ok;
 
@@ -3356,6 +3360,8 @@ needs_quoting (char const* name)
   return *name != *test || strlen (name) != len;
 }
 
+static char xattr_buf[65536];  // VFS imposed max size
+
 /* Add a file to the current table of files.
    Verify that the file exists, and print an error message if it does not.
    Return the number of blocks that the file occupies.  */
@@ -3544,12 +3550,36 @@ gobble_file (char const *name, enum filetype type, ino_t inode,
               have_acl = (0 < n);
             }
 
+          attr_len = listxattr(full_name, NULL, 0);
+          if (attr_len > 0)
+            {
+              attr_len = listxattr(full_name, xattr_buf, 65536);
+
+              if (attr_len > 0)
+                {
+                  char *pBuf = xattr_buf;
+
+                  while (attr_len > 0)
+                    {
+                      if (! strncmp(pBuf, "user.", 5))
+                        {
+                          f->xattr_user = true;
+                          break;
+                        }
+
+                      int l = strlen(pBuf) + 1;
+                      pBuf += l;
+                      attr_len -= l;
+                    }
+                }
+            }
+
           f->acl_type = (!have_scontext && !have_acl
                          ? ACL_T_NONE
                          : (have_scontext && !have_acl
                             ? ACL_T_LSM_CONTEXT_ONLY
                             : ACL_T_YES));
-          any_has_acl |= f->acl_type != ACL_T_NONE;
+          any_has_acl |= f->acl_type != ACL_T_NONE || f->xattr_user;
 
           if (err)
             error (0, errno, "%s", quotef (full_name));
@@ -4338,6 +4368,9 @@ print_long_format (const struct fileinfo *f)
     modebuf[10] = '.';
   else if (f->acl_type == ACL_T_YES)
     modebuf[10] = '+';
+
+  if (f->xattr_user)
+    modebuf[10] = '!';
 
   switch (time_type)
     {
