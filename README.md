@@ -92,3 +92,10 @@ Disclose _**User** eXtended attributes_!
 
 ![xattr](pics/xattr.png)  
 spotted a sneaky user xattr
+
+-----
+**Update for coreutils 9.4**
+
+https://ftp.gnu.org/gnu/coreutils/coreutils-9.4.tar.xz
+
+Started in 2013, it's still my most important, _can't-be-without-it_ patch!
